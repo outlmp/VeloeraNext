@@ -26,7 +26,8 @@ jobs:
 
       - name: Save version info
         run: |
-          git describe --tags > VERSION
+          # If there are no tags git describe would fail; use --always to fall back to commit SHA.
+          git describe --tags --always --dirty > VERSION
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
