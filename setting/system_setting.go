@@ -16,7 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 package setting
 
-var ServerAddress = "http://localhost:3000"
+var ServerAddress = "http://localhost:3300"
 var WorkerUrl = ""
 var WorkerValidKey = ""
 
