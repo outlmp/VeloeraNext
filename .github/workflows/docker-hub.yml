@@ -9,9 +9,9 @@ on:
       image_tag:
         description: 'Optional explicit image tag to push (if empty, will push latest and commit-sha)'
         required: false
-
-env:
-  DOCKERHUB_REPO: outlmp/veloera-next
+      namespace:
+        description: 'Docker Hub namespace (default: DOCKERHUB_USERNAME secret)'
+        required: false
 
 jobs:
   build_and_push:
@@ -51,14 +51,25 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Determine repository name
+        id: repo
+        run: |
+          NS='${{ github.event.inputs.namespace }}'
+          if [ -z "$NS" ]; then
+            NS='${{ secrets.DOCKERHUB_USERNAME }}'
+          fi
+          IMAGE='veloera-next'
+          echo "REPO=docker.io/${NS}/${IMAGE}" >> $GITHUB_OUTPUT
+
       - name: Prepare image tags
         id: tags
         run: |
+          REPO='${{ steps.repo.outputs.REPO }}'
           if [ -n "${{ github.event.inputs.image_tag }}" ]; then
-            echo "TAGS=docker.io/${{ env.DOCKERHUB_REPO }}:${{ github.event.inputs.image_tag }},docker.io/${{ env.DOCKERHUB_REPO }}:latest" >> $GITHUB_OUTPUT
+            echo "TAGS=${REPO}:${{ github.event.inputs.image_tag }},${REPO}:latest" >> $GITHUB_OUTPUT
           else
             SHORT_SHA=$(git rev-parse --short HEAD)
-            echo "TAGS=docker.io/${{ env.DOCKERHUB_REPO }}:${SHORT_SHA},docker.io/${{ env.DOCKERHUB_REPO }}:latest" >> $GITHUB_OUTPUT
+            echo "TAGS=${REPO}:${SHORT_SHA},${REPO}:latest" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push Docker image to Docker Hub
