@@ -97,7 +97,7 @@ func (user *User) GetShowIPInLogs() bool {
 	if settings == nil {
 		return false
 	}
-	
+
 	if showIP, exists := settings["show_ip_in_logs"]; exists {
 		if boolVal, ok := showIP.(bool); ok {
 			return boolVal
@@ -199,28 +199,27 @@ func SearchUsers(keyword string, group string, startIdx int, num int) ([]*User, 
 	query := tx.Unscoped().Model(&User{})
 
 	// 构建搜索条件
-	likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"
+	// github_id 也包含在模糊搜索范围内
 
 	// 尝试将关键字转换为整数ID
 	keywordInt, err := strconv.Atoi(keyword)
 	if err == nil {
 		// 如果是数字，同时搜索ID和其他字段
-		likeCondition = "id = ? OR " + likeCondition
 		if group != "" {
-			query = query.Where("("+likeCondition+") AND "+groupCol+" = ?",
-				keywordInt, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", group)
+			query = query.Where("(id = ? OR username LIKE ? OR email LIKE ? OR display_name LIKE ? OR github_id LIKE ?) AND group = ?",
+				keywordInt, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", group)
 		} else {
-			query = query.Where(likeCondition,
-				keywordInt, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+			query = query.Where("id = ? OR username LIKE ? OR email LIKE ? OR display_name LIKE ? OR github_id LIKE ?",
+				keywordInt, "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 		}
 	} else {
 		// 非数字关键字，只搜索字符串字段
 		if group != "" {
-			query = query.Where("("+likeCondition+") AND "+groupCol+" = ?",
-				"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", group)
+			query = query.Where("(username LIKE ? OR email LIKE ? OR display_name LIKE ? OR github_id LIKE ?) AND group = ?",
+				"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", group)
 		} else {
-			query = query.Where(likeCondition,
-				"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+			query = query.Where("username LIKE ? OR email LIKE ? OR display_name LIKE ? OR github_id LIKE ?",
+				"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 		}
 	}
 
@@ -729,7 +728,7 @@ func GetUserShowIPInLogs(id int, fromDB bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	
+
 	if showIP, exists := settings["show_ip_in_logs"]; exists {
 		if boolVal, ok := showIP.(bool); ok {
 			return boolVal, nil
@@ -992,7 +991,7 @@ func applyAndSaveCheckIn(tx *gorm.DB, user *User, reward int) error {
 	}
 
 	// Record this activity in log
-RecordLog(user.Id, LogTypeCheckIn, fmt.Sprintf("签到奖励 %s", common.LogQuota(reward)))
+	RecordLog(user.Id, LogTypeCheckIn, fmt.Sprintf("签到奖励 %s", common.LogQuota(reward)))
 
 	return nil
 }

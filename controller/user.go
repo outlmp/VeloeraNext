@@ -28,6 +28,8 @@ import (
 	"veloera/model"
 	"veloera/setting"
 
+	"gorm.io/gorm"
+
 	"veloera/constant"
 	"veloera/middleware"
 
@@ -336,6 +338,50 @@ func SearchUsers(c *gin.Context) {
 		},
 	})
 	return
+}
+
+// BatchUpdateUsers 支持批量更新用户的 group / status
+func BatchUpdateUsers(c *gin.Context) {
+	var req struct {
+		Ids        []int  `json:"ids"`
+		Group      string `json:"group"`
+		Status     *int   `json:"status"`
+		DeltaQuota *int   `json:"delta_quota"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	if len(req.Ids) == 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "ID列表不能为空"})
+		return
+	}
+	// First handle simple field updates
+	updates := make(map[string]interface{})
+	if req.Group != "" {
+		updates["group"] = req.Group
+	}
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
+	if len(updates) > 0 {
+		if err := model.DB.Model(&model.User{}).Where("id IN ?", req.Ids).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+	}
+	// quota delta
+	if req.DeltaQuota != nil && *req.DeltaQuota != 0 {
+		if err := model.DB.Model(&model.User{}).Where("id IN ?", req.Ids).Update("quota", gorm.Expr("quota + ?", *req.DeltaQuota)).Error; err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
+	}
+	if len(updates) == 0 && (req.DeltaQuota == nil || *req.DeltaQuota == 0) {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "未提供可更新字段"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": len(req.Ids)})
 }
 
 func GetUser(c *gin.Context) {

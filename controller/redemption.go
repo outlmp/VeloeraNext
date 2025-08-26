@@ -17,8 +17,10 @@
 package controller
 
 import (
+	"math/rand"
 	"net/http"
 	"strconv"
+	"time"
 	"veloera/common"
 	"veloera/model"
 
@@ -53,7 +55,6 @@ func GetAllRedemptions(c *gin.Context) {
 			"page_size": pageSize,
 		},
 	})
-	return
 }
 
 func SearchRedemptions(c *gin.Context) {
@@ -84,7 +85,6 @@ func SearchRedemptions(c *gin.Context) {
 			"page_size": pageSize,
 		},
 	})
-	return
 }
 
 func GetRedemption(c *gin.Context) {
@@ -109,7 +109,6 @@ func GetRedemption(c *gin.Context) {
 		"message": "",
 		"data":    redemption,
 	})
-	return
 }
 
 func AddRedemption(c *gin.Context) {
@@ -228,7 +227,6 @@ func AddRedemption(c *gin.Context) {
 		"message": "",
 		"data":    keys,
 	})
-	return
 }
 
 func DeleteRedemption(c *gin.Context) {
@@ -245,7 +243,6 @@ func DeleteRedemption(c *gin.Context) {
 		"success": true,
 		"message": "",
 	})
-	return
 }
 
 func UpdateRedemption(c *gin.Context) {
@@ -289,7 +286,6 @@ func UpdateRedemption(c *gin.Context) {
 		"message": "",
 		"data":    cleanRedemption,
 	})
-	return
 }
 
 // CountRedemptionsByName 根据名称统计兑换码数量
@@ -401,4 +397,81 @@ func DeleteDisabledRedemptions(c *gin.Context) {
 		"message": "",
 		"data":    count,
 	})
+}
+
+// AddRandomRedemptions 生成一批具有随机额度的兑换码（额度可为正或负）
+func AddRandomRedemptions(c *gin.Context) {
+	var req struct {
+		Name       string `json:"name"`
+		Count      int    `json:"count"`
+		MinQuota   int    `json:"min_quota"`
+		MaxQuota   int    `json:"max_quota"`
+		IsGift     bool   `json:"is_gift"`
+		MaxUses    int    `json:"max_uses"`
+		ValidFrom  int64  `json:"valid_from"`
+		ValidUntil int64  `json:"valid_until"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	// validation
+	if len(req.Name) == 0 || len(req.Name) > 20 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "兑换码名称长度必须为1-20之间"})
+		return
+	}
+	if req.Count <= 0 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "兑换码个数必须大于0"})
+		return
+	}
+	if req.Count > 100 {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "一次生成的兑换码个数不能大于100"})
+		return
+	}
+	if req.MinQuota > req.MaxQuota {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "最小额度不能大于最大额度"})
+		return
+	}
+	// validate time window similar to AddRedemption
+	if req.ValidFrom > 0 && req.ValidUntil > 0 && req.ValidFrom >= req.ValidUntil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "生效时间必须早于过期时间"})
+		return
+	}
+
+	// use a local random generator
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	keys := make([]string, 0, req.Count)
+	for i := 0; i < req.Count; i++ {
+		key := common.GetUUID()
+		// random between min and max inclusive
+		var quota int
+		if req.MinQuota == req.MaxQuota {
+			quota = req.MinQuota
+		} else {
+			span := req.MaxQuota - req.MinQuota + 1
+			quota = req.MinQuota + rnd.Intn(span)
+		}
+
+		cleanRedemption := model.Redemption{
+			UserId:      c.GetInt("id"),
+			Name:        req.Name,
+			Key:         key,
+			CreatedTime: common.GetTimestamp(),
+			Quota:       quota,
+			IsGift:      req.IsGift,
+			MaxUses:     req.MaxUses,
+			ValidFrom:   req.ValidFrom,
+			ValidUntil:  req.ValidUntil,
+		}
+		if err := cleanRedemption.Insert(); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error(), "data": keys})
+			return
+		}
+		keys = append(keys, key)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": keys})
 }

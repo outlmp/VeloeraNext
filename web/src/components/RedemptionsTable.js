@@ -16,29 +16,33 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  API,
-  copy,
-  showError,
-  showSuccess,
-  timestamp2string,
+    API,
+    copy,
+    showError,
+    showSuccess,
+    timestamp2string,
 } from '../helpers';
 
+import {
+    Button,
+    DatePicker,
+    Divider,
+    Form,
+    Modal,
+    Popconfirm,
+    Popover,
+    Space,
+    Switch,
+    Table,
+    Tag,
+    Typography,
+} from '@douyinfe/semi-ui';
+import { useTranslation } from 'react-i18next';
 import { ITEMS_PER_PAGE } from '../constants';
 import { renderQuota } from '../helpers/render';
-import {
-  Button,
-  Divider,
-  Form,
-  Modal,
-  Popconfirm,
-  Popover,
-  Table,
-  Tag,
-} from '@douyinfe/semi-ui';
 import EditRedemption from '../pages/Redemption/EditRedemption';
-import { useTranslation } from 'react-i18next';
 
 function renderTimestamp(timestamp) {
   return <>{timestamp2string(timestamp)}</>;
@@ -340,6 +344,17 @@ const RedemptionsTable = () => {
   });
   const [showEdit, setShowEdit] = useState(false);
   const [showBatchDeleteByName, setShowBatchDeleteByName] = useState(false);
+  const [showRandomModal, setShowRandomModal] = useState(false);
+  const [randomParams, setRandomParams] = useState({
+    name: '',
+    count: 10,
+    min_quota: -500000,
+    max_quota: 500000,
+    is_gift: false,
+    max_uses: -1,
+    valid_from: 0,
+    valid_until: 0,
+  });
   
   const closeEdit = () => {
     setShowEdit(false);
@@ -608,6 +623,14 @@ const RedemptionsTable = () => {
           {t('添加兑换码')}
         </Button>
         <Button
+          theme='light'
+          type='primary'
+          style={{ marginRight: 8 }}
+          onClick={() => setShowRandomModal(true)}
+        >
+          {t('添加随机数额兑换码(可正可负)')}
+        </Button>
+        <Button
           label={t('复制所选兑换码')}
           type='warning'
           style={{ marginRight: 8 }}
@@ -679,6 +702,110 @@ const RedemptionsTable = () => {
         rowSelection={rowSelection}
         onRow={handleRow}
       ></Table>
+      <Modal
+        title={t('添加随机数额兑换码(可正可负)')}
+        visible={showRandomModal}
+        onCancel={() => setShowRandomModal(false)}
+        onOk={async () => {
+          // validate
+          if (!randomParams.name || randomParams.count <= 0) {
+            showError(t('请输入名称并且数量大于0'));
+            return;
+          }
+          if (parseInt(randomParams.min_quota) > parseInt(randomParams.max_quota)) {
+            showError(t('最小额度不能大于最大额度'));
+            return;
+          }
+          if (randomParams.valid_from > 0 && randomParams.valid_until > 0 && randomParams.valid_from >= randomParams.valid_until) {
+            showError(t('生效时间必须早于过期时间'));
+            return;
+          }
+          try {
+            const payload = {
+              name: randomParams.name,
+              count: parseInt(randomParams.count),
+              min_quota: parseInt(randomParams.min_quota),
+              max_quota: parseInt(randomParams.max_quota),
+              is_gift: !!randomParams.is_gift,
+              max_uses: parseInt(randomParams.max_uses),
+              valid_from: parseInt(randomParams.valid_from),
+              valid_until: parseInt(randomParams.valid_until),
+            };
+            const res = await API.post('/api/redemption/random-quota', payload);
+            if (res.data.success) {
+              showSuccess(t('创建成功，生成 {{count}} 个兑换码', { count: payload.count }));
+              setShowRandomModal(false);
+              await refresh();
+              // offer download
+              let text = '';
+              for (let i = 0; i < res.data.data.length; i++) {
+                text += res.data.data[i] + '\n';
+              }
+              Modal.confirm({
+                title: t('兑换码创建成功'),
+                content: (
+                  <div>
+                    <p>{t('是否下载生成的兑换码文本文件？')}</p>
+                  </div>
+                ),
+                onOk: () => {
+                  const blob = new Blob([text], { type: 'text/plain' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${randomParams.name}.txt`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                },
+              });
+            } else {
+              showError(res.data.message);
+            }
+          } catch (err) {
+            showError(err.message);
+          }
+        }}
+      >
+        <Form>
+          <Form.Input label={t('名称')} field='name' value={randomParams.name} onChange={(v) => setRandomParams({ ...randomParams, name: v })} />
+          <Form.Input label={t('生成数量')} field='count' value={randomParams.count} onChange={(v) => setRandomParams({ ...randomParams, count: v })} type='number' />
+          <Form.Input label={t('最小额度(可为负)')} field='min_quota' value={randomParams.min_quota} onChange={(v) => setRandomParams({ ...randomParams, min_quota: v })} type='number' />
+          <Form.Input label={t('最大额度(可为负)')} field='max_quota' value={randomParams.max_quota} onChange={(v) => setRandomParams({ ...randomParams, max_quota: v })} type='number' />
+          <Space style={{ marginTop: 12 }} align='center'>
+            <Typography.Text>{t('作为礼品码')}</Typography.Text>
+            <Switch checked={randomParams.is_gift} onChange={(v) => setRandomParams({ ...randomParams, is_gift: v })} />
+          </Space>
+          {randomParams.is_gift && (
+            <Form.Input style={{ marginTop: 8 }} label={t('最大使用次数(-1表示无限)')} field='max_uses' value={randomParams.max_uses} onChange={(v) => setRandomParams({ ...randomParams, max_uses: v })} type='number' />
+          )}
+          <Divider />
+          <Typography.Text>{t('生效时间')}</Typography.Text>
+          <DatePicker
+            style={{ marginTop: 8, width: '100%' }}
+            type='dateTime'
+            placeholder={t('留空表示立即生效')}
+            value={randomParams.valid_from > 0 ? new Date(randomParams.valid_from * 1000) : null}
+            onChange={(date) => {
+              const timestamp = date ? Math.floor(date.getTime() / 1000) : 0;
+              setRandomParams({ ...randomParams, valid_from: timestamp });
+            }}
+            format='yyyy-MM-dd HH:mm:ss'
+          />
+          <Divider />
+            <Typography.Text>{t('过期时间')}</Typography.Text>
+            <DatePicker
+              style={{ marginTop: 8, width: '100%' }}
+              type='dateTime'
+              placeholder={t('留空表示永不过期')}
+              value={randomParams.valid_until > 0 ? new Date(randomParams.valid_until * 1000) : null}
+              onChange={(date) => {
+                const timestamp = date ? Math.floor(date.getTime() / 1000) : 0;
+                setRandomParams({ ...randomParams, valid_until: timestamp });
+              }}
+              format='yyyy-MM-dd HH:mm:ss'
+            />
+        </Form>
+      </Modal>
     </>
   );
 };

@@ -16,22 +16,25 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
-import React, { useEffect, useState } from 'react';
-import { API, showError, showSuccess } from '../helpers';
 import {
-  Button,
-  Form,
-  Popconfirm,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
+    Button,
+    Divider,
+    Form,
+    Modal,
+    Popconfirm,
+    Space,
+    Switch,
+    Table,
+    Tag,
+    Tooltip
 } from '@douyinfe/semi-ui';
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ITEMS_PER_PAGE } from '../constants';
+import { API, showError, showSuccess } from '../helpers';
 import { renderGroup, renderNumber, renderQuota } from '../helpers/render';
 import AddUser from '../pages/User/AddUser';
 import EditUser from '../pages/User/EditUser';
-import { useTranslation } from 'react-i18next';
 
 const UsersTable = () => {
   const { t } = useTranslation();
@@ -258,6 +261,11 @@ const UsersTable = () => {
   const [searching, setSearching] = useState(false);
   const [searchGroup, setSearchGroup] = useState('');
   const [groupOptions, setGroupOptions] = useState([]);
+  const [githubKeyword, setGithubKeyword] = useState('');
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [showBatchEdit, setShowBatchEdit] = useState(false);
+  const [batchConditions, setBatchConditions] = useState({ noUsage: true, zeroBalance: true });
+  const [batchUpdate, setBatchUpdate] = useState({ group: '', status: '' });
   const [userCount, setUserCount] = useState(ITEMS_PER_PAGE);
   const [showAddUser, setShowAddUser] = useState(false);
   const [showEditUser, setShowEditUser] = useState(false);
@@ -353,6 +361,7 @@ const UsersTable = () => {
     pageSize,
     searchKeyword,
     searchGroup,
+    githubKey,
   ) => {
     if (searchKeyword === '' && searchGroup === '') {
       // if keyword is blank, load files instead.
@@ -361,7 +370,7 @@ const UsersTable = () => {
     }
     setSearching(true);
     const res = await API.get(
-      `/api/user/search?keyword=${searchKeyword}&group=${searchGroup}&p=${startIdx}&page_size=${pageSize}`,
+      `/api/user/search?keyword=${searchKeyword}&group=${searchGroup}&github=${githubKey || ''}&p=${startIdx}&page_size=${pageSize}`,
     );
     const { success, message, data } = res.data;
     if (success) {
@@ -384,7 +393,7 @@ const UsersTable = () => {
     if (searchKeyword === '' && searchGroup === '') {
       loadUsers(page, pageSize).then();
     } else {
-      searchUsers(page, pageSize, searchKeyword, searchGroup).then();
+      searchUsers(page, pageSize, searchKeyword, searchGroup, githubKeyword).then();
     }
   };
 
@@ -401,10 +410,10 @@ const UsersTable = () => {
 
   const refresh = async () => {
     setActivePage(1);
-    if (searchKeyword === '') {
+    if (searchKeyword === '' && githubKeyword === '' && searchGroup === '') {
       await loadUsers(activePage, pageSize);
     } else {
-      await searchUsers(activePage, pageSize, searchKeyword, searchGroup);
+      await searchUsers(activePage, pageSize, searchKeyword, searchGroup, githubKeyword);
     }
   };
 
@@ -453,7 +462,7 @@ const UsersTable = () => {
       ></EditUser>
       <Form
         onSubmit={() => {
-          searchUsers(activePage, pageSize, searchKeyword, searchGroup);
+          searchUsers(activePage, pageSize, searchKeyword, searchGroup, githubKeyword);
         }}
         labelPosition='left'
       >
@@ -480,7 +489,7 @@ const UsersTable = () => {
               optionList={groupOptions}
               onChange={(value) => {
                 setSearchGroup(value);
-                searchUsers(activePage, pageSize, searchKeyword, value);
+                searchUsers(activePage, pageSize, searchKeyword, value, githubKeyword);
               }}
             />
             <Button
@@ -500,6 +509,29 @@ const UsersTable = () => {
             >
               {t('添加用户')}
             </Button>
+            <Button
+              theme='light'
+              type='warning'
+              onClick={() => {
+                // 依据条件自动选择
+                let filtered = users.filter(u => {
+                  const condNoUsage = (u.used_quota === 0 && u.request_count === 0);
+                  const condZeroBalance = (u.quota === 0);
+                  if (batchConditions.noUsage && batchConditions.zeroBalance) {
+                    return condNoUsage || condZeroBalance; // 任一满足
+                  } else if (batchConditions.noUsage) {
+                    return condNoUsage;
+                  } else if (batchConditions.zeroBalance) {
+                    return condZeroBalance;
+                  }
+                  return false;
+                });
+                setSelectedRows(filtered.map(f => f.id));
+                setShowBatchEdit(true);
+              }}
+            >
+              {t('批量选择并编辑(无消费/余额为零)')}
+            </Button>
           </Space>
         </div>
       </Form>
@@ -507,6 +539,10 @@ const UsersTable = () => {
       <Table
         columns={columns}
         dataSource={users}
+        rowSelection={{
+          selectedRowKeys: selectedRows,
+          onChange: (keys) => setSelectedRows(keys),
+        }}
         pagination={{
           formatPageText: (page) =>
             t('第 {{start}} - {{end}} 条，共 {{total}} 条', {
@@ -526,6 +562,41 @@ const UsersTable = () => {
         }}
         loading={loading}
       />
+
+      <Modal
+        title={t('批量编辑用户')}
+        visible={showBatchEdit}
+        onCancel={()=> setShowBatchEdit(false)}
+        onOk={async ()=>{
+          if (selectedRows.length === 0) { showError(t('未选择用户')); return; }
+          if (!batchUpdate.group && batchUpdate.status === '') { showError(t('请至少设置一个更新字段')); return; }
+          try {
+            const payload = { ids: selectedRows };
+            if (batchUpdate.group) payload.group = batchUpdate.group;
+            if (batchUpdate.status !== '') payload.status = parseInt(batchUpdate.status);
+            if (batchUpdate.delta_quota && batchUpdate.delta_quota !== '') payload.delta_quota = parseInt(batchUpdate.delta_quota);
+            const res = await API.post('/api/user/batch_update', payload);
+            if (res.data.success) { showSuccess(t('批量更新成功')); setShowBatchEdit(false); refresh(); }
+            else showError(res.data.message);
+          } catch (e) { showError(e.message); }
+        }}
+      >
+        <Divider>{t('筛选条件(任选勾选)')}</Divider>
+        <Space style={{ marginBottom: 12 }}>
+          <Switch checked={batchConditions.noUsage} onChange={(v)=> setBatchConditions({ ...batchConditions, noUsage: v })} /> {t('无消费 (使用额度与调用数为0)')}
+          <Switch checked={batchConditions.zeroBalance} onChange={(v)=> setBatchConditions({ ...batchConditions, zeroBalance: v })} /> {t('余额为零 (quota=0)')}
+        </Space>
+        <Divider>{t('更新项')}</Divider>
+        <Form labelPosition='left'>
+          <Form.Select field='batch_group' label={t('新分组')} placeholder={t('保持不变')} optionList={groupOptions} onChange={(v)=> setBatchUpdate({ ...batchUpdate, group: v })} />
+          <Form.Select field='batch_status' label={t('新状态')} placeholder={t('保持不变')} optionList={[
+            { label: t('保持不变'), value: ''},
+            { label: t('已激活'), value: '1'},
+            { label: t('已封禁'), value: '2'},
+          ]} onChange={(v)=> setBatchUpdate({ ...batchUpdate, status: v })} />
+          <Form.Input field='delta_quota' label={t('额度调整(可正可负)')} placeholder={t('例如 500000 或 -500000')} onChange={(v)=> setBatchUpdate({ ...batchUpdate, delta_quota: v })} />
+        </Form>
+      </Modal>
     </>
   );
 };

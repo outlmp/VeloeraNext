@@ -88,6 +88,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/:id", controller.GetUser)
 				adminRoute.POST("/", controller.CreateUser)
 				adminRoute.POST("/manage", controller.ManageUser)
+				adminRoute.POST("/batch_update", controller.BatchUpdateUsers)
 				adminRoute.PUT("/", controller.UpdateUser)
 				adminRoute.DELETE("/:id", controller.DeleteUser)
 			}
@@ -145,6 +146,8 @@ func SetApiRouter(router *gin.Engine) {
 			redemptionRoute.DELETE("/delete-by-name", controller.DeleteRedemptionsByName)
 			redemptionRoute.PUT("/batch-disable", controller.BatchDisableRedemptions)
 			redemptionRoute.DELETE("/delete-disabled", controller.DeleteDisabledRedemptions)
+			// 生成随机额度兑换码（额度可正可负）
+			redemptionRoute.POST("/random-quota", controller.AddRandomRedemptions)
 			redemptionRoute.GET("/:id", controller.GetRedemption)
 			redemptionRoute.POST("/", controller.AddRedemption)
 			redemptionRoute.PUT("/", controller.UpdateRedemption)
@@ -173,7 +176,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			groupRoute.GET("/", controller.GetGroups)
 		}
-		
+
 		// Model mapping routes
 		modelMappingRoute := apiRouter.Group("/model_mapping")
 		modelMappingRoute.Use(middleware.AdminAuth())
