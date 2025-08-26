@@ -29,6 +29,7 @@ import (
 	"veloera/middleware"
 	"veloera/model"
 	"veloera/router"
+	"veloera/scripts"
 	"veloera/service"
 	"veloera/setting/operation_setting"
 
@@ -70,6 +71,12 @@ func main() {
 	}
 
 	model.CheckSetup()
+
+	// Initialize database with default data if needed
+	err = scripts.InitializeDatabase()
+	if err != nil {
+		common.SysError("failed to initialize default data: " + err.Error())
+	}
 
 	// Initialize SQL Database
 	err = model.InitLogDB()
