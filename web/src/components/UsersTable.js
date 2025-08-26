@@ -569,7 +569,10 @@ const UsersTable = () => {
         onCancel={()=> setShowBatchEdit(false)}
         onOk={async ()=>{
           if (selectedRows.length === 0) { showError(t('未选择用户')); return; }
-          if (!batchUpdate.group && batchUpdate.status === '') { showError(t('请至少设置一个更新字段')); return; }
+          const hasGroup = !!batchUpdate.group;
+          const hasStatus = batchUpdate.status !== '';
+          const hasDelta = batchUpdate.delta_quota !== undefined && batchUpdate.delta_quota !== null && batchUpdate.delta_quota !== '';
+          if (!hasGroup && !hasStatus && !hasDelta) { showError(t('请至少设置一个更新字段')); return; }
           try {
             const payload = { ids: selectedRows };
             if (batchUpdate.group) payload.group = batchUpdate.group;
